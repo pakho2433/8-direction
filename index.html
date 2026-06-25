@@ -6,33 +6,37 @@
 <title>8 Direction 棋盤任務遊戲</title>
 <style>
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#bfeeff;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",sans-serif;color:#123b58}
-#loading{position:fixed;inset:0;display:grid;place-items:center;background:#bfeeff;z-index:2;text-align:center}
+main{position:fixed;inset:0;display:grid;place-items:center;text-align:center;padding:24px}
 .spin{width:54px;height:54px;border:7px solid rgba(18,59,88,.2);border-top-color:#123b58;border-radius:50%;margin:0 auto 18px;animation:s 1s linear infinite}
 @keyframes s{to{transform:rotate(360deg)}}
-#gameFrame{position:fixed;inset:0;width:100%;height:100%;border:0;background:#bfeeff;display:none}
+button{border:0;border-radius:14px;padding:12px 18px;background:#fff;color:#123b58;font-weight:900;font-size:16px;box-shadow:0 6px 0 #80bed6}
 </style>
 </head>
 <body>
-<div id="loading"><main><div class="spin"></div><h2>8 Direction 遊戲載入中</h2></main></div>
-<iframe id="gameFrame" title="8 Direction 棋盤任務遊戲" allow="fullscreen; autoplay"></iframe>
+<main id="loading"><div><div class="spin"></div><h2>8 Direction 遊戲載入中</h2><p>正在準備完整遊戲畫面⋯</p></div></main>
 <script>
 (async()=>{
   const loading=document.getElementById('loading');
-  const frame=document.getElementById('gameFrame');
   try{
     const stamp=Date.now();
     const names=['parts/part01.txt','parts/part02.txt','parts/part03.txt','parts/part04.txt','parts/part05.txt'];
-    const parts=await Promise.all(names.map(async n=>{
-      const r=await fetch(n+'?v='+stamp,{cache:'no-store'});
-      if(!r.ok) throw new Error('無法載入 '+n);
-      return r.text();
+    const chunks=await Promise.all(names.map(async(name,index)=>{
+      const response=await fetch(name+'?v='+stamp,{cache:'no-store'});
+      if(!response.ok)throw new Error('無法載入 '+name);
+      let text=await response.text();
+      text=text.replace(/^\uFEFF/,'');
+      if(index>0)text=text.replace(/^\s+/, '');
+      if(index<names.length-1)text=text.replace(/\s+$/, '');
+      return text;
     }));
-    frame.onload=()=>{frame.style.display='block';loading.style.display='none'};
-    frame.srcdoc=parts.join('');
-    setTimeout(()=>{if(frame.style.display!=='block'){frame.style.display='block';loading.style.display='none'}},5000);
-  }catch(e){
-    loading.innerHTML='<main><h2>載入失敗</h2><p>請重新整理頁面。</p><p style="font-size:14px">'+String(e.message||e)+'</p></main>';
-    console.error(e);
+    const html=chunks.join('');
+    if(!/^<!doctype html/i.test(html.trim())||!/<\/html>\s*$/i.test(html.trim()))throw new Error('遊戲檔案不完整');
+    const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+    const gameUrl=URL.createObjectURL(blob);
+    window.location.replace(gameUrl);
+  }catch(error){
+    console.error(error);
+    loading.innerHTML='<div><h2>載入失敗</h2><p>'+String(error.message||error)+'</p><button onclick="location.reload()">重新載入</button></div>';
   }
 })();
 </script>
