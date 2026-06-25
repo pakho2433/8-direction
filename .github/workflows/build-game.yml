@@ -52,7 +52,7 @@ jobs:
           )
           output = re.sub(
               r'<script>\(\(\)=>\{const d=s=>pako\.ungzip\([\s\S]*?</script>',
-              f'<script>{game_js}</script>',
+              lambda _match: '<script>' + game_js + '</script>',
               output,
               count=1,
           )
