@@ -5,3 +5,5 @@
 https://pakho2433.github.io/8-direction/
 
 請使用完整網址，不能只開啟 `https://pakho2433.github.io/`。
+
+GitHub Pages 已重新觸發部署。
