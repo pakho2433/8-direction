@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Assemble the valid five game parts
+      - name: Assemble and repair the valid five game parts
         shell: bash
         run: |
           python3 - <<'PY'
@@ -28,7 +28,15 @@ jobs:
           if missing:
               raise SystemExit("Missing game parts: " + ", ".join(missing))
 
-          game = "".join(file.read_text(encoding="utf-8").replace("\ufeff", "").strip() for file in files)
+          chunks = [file.read_text(encoding="utf-8").replace("\ufeff", "").strip() for file in files]
+
+          # The first uploaded part contains one accidental quote at its final split point.
+          # Removing it joins the compressed CSS string correctly with part 02.
+          if chunks[0].endswith('"') and chunks[1] and chunks[1][0].isalnum():
+              chunks[0] = chunks[0][:-1]
+              print("Removed the accidental quote at the part01/part02 boundary")
+
+          game = "".join(chunks)
           if not game.lstrip().lower().startswith("<!doctype html"):
               raise SystemExit("Assembled file does not begin with HTML")
           if not game.rstrip().lower().endswith("</html>"):
@@ -36,7 +44,7 @@ jobs:
 
           Path("index.html").write_text(game, encoding="utf-8")
           Path(".nojekyll").touch()
-          print("Published five valid parts as index.html:", len(game), "characters")
+          print("Published repaired five-part game as index.html:", len(game), "characters")
           PY
 
       - name: Commit the direct game page
@@ -48,6 +56,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes required"
           else
-            git commit -m "Publish valid five-part game directly [skip ci]"
+            git commit -m "Repair and publish the direct game page [skip ci]"
             git push
           fi
