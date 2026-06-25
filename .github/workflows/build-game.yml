@@ -17,30 +17,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Assemble the game into index.html
+      - name: Assemble the valid five game parts
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          files = sorted(Path("parts").glob("part*.txt"))
-          if not files:
-              raise SystemExit("No game parts found")
+          files = [Path(f"parts/part{i:02d}.txt") for i in range(1, 6)]
+          missing = [str(file) for file in files if not file.exists()]
+          if missing:
+              raise SystemExit("Missing game parts: " + ", ".join(missing))
 
-          chunks = []
-          for file in files:
-              text = file.read_text(encoding="utf-8").replace("\ufeff", "")
-              chunks.append(text.strip())
-
-          game = "".join(chunks)
+          game = "".join(file.read_text(encoding="utf-8").replace("\ufeff", "").strip() for file in files)
           if not game.lstrip().lower().startswith("<!doctype html"):
               raise SystemExit("Assembled file does not begin with HTML")
-          if "</html>" not in game.lower():
-              raise SystemExit("Assembled file is incomplete")
+          if not game.rstrip().lower().endswith("</html>"):
+              raise SystemExit("Assembled five-part game is incomplete")
 
           Path("index.html").write_text(game, encoding="utf-8")
           Path(".nojekyll").touch()
-          print("Assembled", len(files), "parts into", len(game), "characters")
+          print("Published five valid parts as index.html:", len(game), "characters")
           PY
 
       - name: Commit the direct game page
@@ -52,6 +48,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes required"
           else
-            git commit -m "Publish game as a direct HTML page [skip ci]"
+            git commit -m "Publish valid five-part game directly [skip ci]"
             git push
           fi
