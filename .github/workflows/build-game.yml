@@ -1,0 +1,85 @@
+name: Build self-contained game
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "parts/**"
+      - ".github/workflows/build-game.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build direct browser page
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64, gzip, re, urllib.request
+
+          files = [Path(f"parts/part{i:02d}.txt") for i in range(1, 6)]
+          source = "".join(p.read_text(encoding="utf-8").strip() for p in files)
+
+          css_match = re.search(
+              r'document\.getElementById\("appStyle"\)\.textContent=d\("([A-Za-z0-9+/=]+)"\);',
+              source,
+          )
+          js_match = re.search(
+              r'const s=document\.createElement\("script"\);s\.textContent=d\("([A-Za-z0-9+/=]+)"\);document\.body\.appendChild\(s\)',
+              source,
+          )
+          if not css_match or not js_match:
+              raise SystemExit("Could not locate compressed CSS or JavaScript")
+
+          css = gzip.decompress(base64.b64decode(css_match.group(1))).decode("utf-8")
+          game_js = gzip.decompress(base64.b64decode(js_match.group(1))).decode("utf-8")
+
+          output = source.replace('<style id="appStyle"></style>', f'<style>{css}</style>')
+          output = re.sub(
+              r'<script src="https://cdn\.jsdelivr\.net/npm/pako@[^"]+"></script>',
+              '',
+              output,
+          )
+          output = re.sub(
+              r'<script>\(\(\)=>\{const d=s=>pako\.ungzip\([\s\S]*?</script>',
+              f'<script>{game_js}</script>',
+              output,
+              count=1,
+          )
+
+          three_url = "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"
+          three_path = Path("three.min.js")
+          try:
+              with urllib.request.urlopen(three_url, timeout=30) as response:
+                  three_path.write_bytes(response.read())
+              output = output.replace(
+                  f'<script src="{three_url}"></script>',
+                  '<script src="three.min.js"></script>',
+              )
+          except Exception as error:
+              print(f"Three.js download failed; keeping CDN link: {error}")
+
+          Path("index.html").write_text(output, encoding="utf-8")
+          Path(".nojekyll").touch()
+          print(f"Built index.html: {len(output):,} characters")
+          PY
+
+      - name: Commit generated browser files
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html three.min.js .nojekyll 2>/dev/null || git add index.html .nojekyll
+          if git diff --cached --quiet; then
+            echo "No generated changes"
+          else
+            git commit -m "Build direct Safari-compatible game [skip ci]"
+            git push
+          fi
