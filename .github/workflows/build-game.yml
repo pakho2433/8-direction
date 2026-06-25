@@ -1,4 +1,4 @@
-name: Build self-contained game
+name: Build direct game page
 
 on:
   push:
@@ -17,73 +17,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build direct browser page
+      - name: Assemble the game into index.html
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import base64, gzip, re, urllib.request
 
           files = sorted(Path("parts").glob("part*.txt"))
           if not files:
-              raise SystemExit("No game part files found")
-          print("Using parts:", ", ".join(p.name for p in files))
-          source = "".join(p.read_text(encoding="utf-8").strip() for p in files)
+              raise SystemExit("No game parts found")
 
-          css_match = re.search(
-              r'document\.getElementById\("appStyle"\)\.textContent=d\("([A-Za-z0-9+/=]+)"\);',
-              source,
-          )
-          js_match = re.search(
-              r'const s=document\.createElement\("script"\);s\.textContent=d\("([A-Za-z0-9+/=]+)"\);document\.body\.appendChild\(s\)',
-              source,
-          )
-          if not css_match or not js_match:
-              raise SystemExit("Could not locate compressed CSS or JavaScript")
+          chunks = []
+          for file in files:
+              text = file.read_text(encoding="utf-8").replace("\ufeff", "")
+              chunks.append(text.strip())
 
-          css = gzip.decompress(base64.b64decode(css_match.group(1))).decode("utf-8")
-          game_js = gzip.decompress(base64.b64decode(js_match.group(1))).decode("utf-8")
+          game = "".join(chunks)
+          if not game.lstrip().lower().startswith("<!doctype html"):
+              raise SystemExit("Assembled file does not begin with HTML")
+          if "</html>" not in game.lower():
+              raise SystemExit("Assembled file is incomplete")
 
-          output = source.replace('<style id="appStyle"></style>', f'<style>{css}</style>')
-          output = re.sub(
-              r'<script src="https://cdn\.jsdelivr\.net/npm/pako@[^"]+"></script>',
-              '',
-              output,
-          )
-          output = re.sub(
-              r'<script>\(\(\)=>\{const d=s=>pako\.ungzip\([\s\S]*?</script>',
-              lambda _match: '<script>' + game_js + '</script>',
-              output,
-              count=1,
-          )
-
-          three_url = "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"
-          three_path = Path("three.min.js")
-          try:
-              with urllib.request.urlopen(three_url, timeout=30) as response:
-                  three_path.write_bytes(response.read())
-              output = output.replace(
-                  f'<script src="{three_url}"></script>',
-                  '<script src="three.min.js"></script>',
-              )
-          except Exception as error:
-              print(f"Three.js download failed; keeping CDN link: {error}")
-
-          Path("index.html").write_text(output, encoding="utf-8")
+          Path("index.html").write_text(game, encoding="utf-8")
           Path(".nojekyll").touch()
-          print(f"Built index.html: {len(output):,} characters")
+          print("Assembled", len(files), "parts into", len(game), "characters")
           PY
 
-      - name: Commit generated browser files
+      - name: Commit the direct game page
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html .nojekyll
-          if [ -f three.min.js ]; then git add three.min.js; fi
           if git diff --cached --quiet; then
-            echo "No generated changes"
+            echo "No changes required"
           else
-            git commit -m "Build direct Safari-compatible game [skip ci]"
+            git commit -m "Publish game as a direct HTML page [skip ci]"
             git push
           fi
